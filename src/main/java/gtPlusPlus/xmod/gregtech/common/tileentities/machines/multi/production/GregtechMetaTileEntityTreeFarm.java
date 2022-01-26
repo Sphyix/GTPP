@@ -15,7 +15,6 @@ import gregtech.api.metatileentity.implementations.*;
 import gregtech.api.render.TextureFactory;
 import gregtech.api.util.*;
 import gtPlusPlus.api.objects.data.AutoMap;
-import gtPlusPlus.api.objects.data.Pair;
 import gtPlusPlus.core.block.ModBlocks;
 import gtPlusPlus.core.lib.CORE;
 import gtPlusPlus.core.util.math.MathUtils;
@@ -24,16 +23,9 @@ import gtPlusPlus.xmod.gregtech.api.metatileentity.implementations.base.Gregtech
 import gtPlusPlus.xmod.gregtech.common.blocks.textures.TexturesGtBlock;
 import gtPlusPlus.xmod.gregtech.common.helpers.TreeFarmHelper;
 import gtPlusPlus.xmod.gregtech.common.helpers.treefarm.TreeGenerator;
-import joptsimple.util.KeyValuePair;
 import net.minecraft.init.Blocks;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
-
-import javax.xml.crypto.dsig.keyinfo.KeyValue;
-import java.util.Dictionary;
-import java.util.Enumeration;
-import java.util.HashMap;
-import java.util.Map;
 
 import static com.gtnewhorizon.structurelib.structure.StructureUtility.*;
 import static gregtech.api.util.GT_StructureUtility.ofHatchAdder;
@@ -43,15 +35,13 @@ public class GregtechMetaTileEntityTreeFarm extends GregtechMeta_MultiBlockBase<
 	public static int CASING_TEXTURE_ID;
 	public static String mCasingName = "Sterile Farm Casing";
 	public static TreeGenerator mTreeData;
+	private ItemStack mTreeType;
 	private int mCasing;
 	private IStructureDefinition<GregtechMetaTileEntityTreeFarm> STRUCTURE_DEFINITION = null;
 
 	private ItemStack currSapling;
 	private int currSlot = 0;
 	private GT_MetaTileEntity_Hatch_InputBus currInputBus;
-	private ItemStack mTreeType;
-
-	private HashMap<String, ItemStack> sLogCache = new HashMap<String, ItemStack>();
 
 	static {
 		new Thread("GTPP-TreeDataWorker") {
@@ -90,6 +80,7 @@ public class GregtechMetaTileEntityTreeFarm extends GregtechMeta_MultiBlockBase<
 				.addInfo("Converts EU to Oak Logs")
 				.addInfo("Eu Usage: 100% | Parallel: 1")
 				.addInfo("Requires a Saw or Chainsaw in GUI slot")
+				.addInfo("Add a sapling in the input bus to change wood type output")
 				.addPollutionAmount(getPollutionPerSecond(null))
 				.addSeparator()
 				.beginStructureBlock(3, 3, 3, true)
@@ -138,50 +129,47 @@ public class GregtechMetaTileEntityTreeFarm extends GregtechMeta_MultiBlockBase<
 	}
 
 	public boolean checkRecipe(final ItemStack aStack) {
-		if (mTreeData == null)
-			// not finished somehow
-			return false;
+
 		if (aStack == null && !replaceTool())
 			// no tool
 			return false;
 		if (!isCorrectMachinePart(aStack))
 			// not a tool
 			return false;
-		if (mTreeData != null) {
 
-			long tVoltage = getMaxInputVoltage();
-			byte tTier = (byte) Math.max(1, GT_Utility.getTier(tVoltage));
+		long tVoltage = getMaxInputVoltage();
+		byte tTier = (byte) Math.max(1, GT_Utility.getTier(tVoltage));
 
-			this.mMaxProgresstime = 100;
-			this.mEUt = (int) tVoltage;
+		this.mMaxProgresstime = 100;
+		this.mEUt = (int) tVoltage;
 
-			this.mEfficiency = (10000 - (getIdealStatus() - getRepairStatus()) * 1000);
-			this.mEfficiencyIncrease = 10000;
+		this.mEfficiency = (10000 - (getIdealStatus() - getRepairStatus()) * 1000);
+		this.mEfficiencyIncrease = 10000;
 
-			// Overclock
-			if (this.mEUt <= 16) {
-				this.mEUt = (this.mEUt * (1 << tTier - 1) * (1 << tTier - 1));
-				this.mMaxProgresstime = (this.mMaxProgresstime / (1 << tTier - 1));
-			} else {
-				while (this.mEUt <= gregtech.api.enums.GT_Values.V[(tTier - 1)]) {
-					this.mEUt *= 4;
-					this.mMaxProgresstime /= 2;
-				}
+		// Overclock
+		if (this.mEUt <= 16) {
+			this.mEUt = (this.mEUt * (1 << tTier - 1) * (1 << tTier - 1));
+			this.mMaxProgresstime = (this.mMaxProgresstime / (1 << tTier - 1));
+		} else {
+			while (this.mEUt <= gregtech.api.enums.GT_Values.V[(tTier - 1)]) {
+				this.mEUt *= 4;
+				this.mMaxProgresstime /= 2;
 			}
+		}
 
-			if (this.mEUt > 0) {
-				this.mEUt = (-this.mEUt);
-			}
+		if (this.mEUt > 0) {
+			this.mEUt = (-this.mEUt);
+		}
 
-
-			int aChance = MathUtils.randInt(0, 10);
+		/* Old Methods with FakeWorld
+		int aChance = MathUtils.randInt(0, 10);
 
 			try {
 				if (aChance < 8) {
 					ItemStackMap<Integer> allOutputs = new ItemStackMap<>();
 					if (aLeaves == null)
 						aLeaves = ItemUtils.getSimpleStack(Blocks.leaves);
-					//1% Chance per Tick				
+					//1% Chance per Tick
 					for (int u = 0; u < (Math.max(4, (MathUtils.randInt((3 * tTier), 100) * tTier * tTier) / 14)); u++) {
 						AutoMap<ItemStack> aOutputs = mTreeData.generateOutput(0);
 						if (aOutputs.size() > 0) {
@@ -203,13 +191,23 @@ public class GregtechMetaTileEntityTreeFarm extends GregtechMeta_MultiBlockBase<
 				}
 			} catch (Throwable t) {
 				t.printStackTrace(GT_Log.err);
+		 */
+		getWoodFromSapling();
+		try {
+			int outputAmount = ((2 * (tTier * tTier)) - (2 * tTier) + 5)*(mMaxProgresstime/20);
+			int lastStack = outputAmount % 64;
+			mTreeType.stackSize = 64;
+			for (int i = 0; i < (outputAmount - lastStack) / 64; i++) {
+				this.addOutput(mTreeType);
 			}
-			return true;
-		} else {
-			return false;
+			mTreeType.stackSize = lastStack;
+			this.addOutput(mTreeType);
+			this.updateSlots();
+		} catch (Throwable t) {
+			t.printStackTrace(GT_Log.err);
 		}
+		return true;
 	}
-
 	@Override
 	public boolean checkHatch() {
 		return super.checkHatch() && mEnergyHatches.size() == 1;
@@ -300,9 +298,6 @@ public class GregtechMetaTileEntityTreeFarm extends GregtechMeta_MultiBlockBase<
 	}
 
 	public void getWoodFromSapling() {
-		if(sLogCache.size() == 0)
-			loadMapWoodFromSapling();
-
 		if(this.currSapling != null && this.currInputBus != null){
 			ItemStack uStack = this.currInputBus.mInventory[this.currSlot];
 			if(uStack == this.currSapling)
@@ -312,8 +307,7 @@ public class GregtechMetaTileEntityTreeFarm extends GregtechMeta_MultiBlockBase<
 			for (int i = 0; i < mInputBus.mInventory.length; i++) {
 				ItemStack uStack = mInputBus.mInventory[i];
 				if(uStack != null) {
-					String registryName = Item.itemRegistry.getNameForObject(uStack.getItem());
-					ItemStack aWood = sLogCache.get(registryName + ":" + uStack.getItemDamage());
+					ItemStack aWood = mapWoodFromSapling(uStack);
 					if (aWood != null) {
 						this.currSapling = uStack;
 						this.currInputBus = mInputBus;
@@ -327,50 +321,84 @@ public class GregtechMetaTileEntityTreeFarm extends GregtechMeta_MultiBlockBase<
 		}
 	}
 
-	public void loadMapWoodFromSapling(){
-
-		//minecraft
-		sLogCache.put("minecraft:sapling:0", new ItemStack(Blocks.log,1, 0)); //oak
-		sLogCache.put("minecraft:sapling:1", new ItemStack(Blocks.log,1, 1)); //spruce
-		sLogCache.put("minecraft:sapling:2", new ItemStack(Blocks.log,1, 2)); //birch
-		sLogCache.put("minecraft:sapling:3", new ItemStack(Blocks.log,1, 3)); //jungle
-		sLogCache.put("minecraft:sapling:4", new ItemStack(Blocks.log2,1, 0)); //acacia
-		sLogCache.put("minecraft:sapling:5", new ItemStack(Blocks.log2,1, 1)); //dark oak
-
-		//galaxySpace
-		sLogCache.put("GalaxySpace:barnardaCsapling", GT_ModHandler.getModItem("GalaxySpace","barnardaClog", 1)); //barnarda c
-
-		//ic2
-		sLogCache.put("IC2:blockRubSapling", GT_ModHandler.getModItem("IC2","blockRubWood", 1)); //rubber
-//
-//		//natura
-//		sLogCache.put(GT_ModHandler.getModItem("Natura","florasapling", 1, 1), GT_ModHandler.getModItem("Natura","tree", 1, 0)); //eucalyptus
-//		sLogCache.put(GT_ModHandler.getModItem("Natura","florasapling", 1, 2), GT_ModHandler.getModItem("Natura","tree", 1, 3)); //hopseed
-//		sLogCache.put(GT_ModHandler.getModItem("Natura","florasapling", 1, 3), GT_ModHandler.getModItem("Natura","tree", 1, 1)); //sakura
-//		sLogCache.put(GT_ModHandler.getModItem("Natura","florasapling", 1, 4), GT_ModHandler.getModItem("Natura","tree", 1, 2)); //ghostwood
-//		sLogCache.put(GT_ModHandler.getModItem("Natura","florasapling", 1, 5), GT_ModHandler.getModItem("Natura","bloodwood", 1, 0)); //bloodwood
-//		sLogCache.put(GT_ModHandler.getModItem("Natura","florasapling", 1, 6), GT_ModHandler.getModItem("Natura","Dark Tree", 1, 0)); //darkwood
-//		sLogCache.put(GT_ModHandler.getModItem("Natura","florasapling", 1, 7), GT_ModHandler.getModItem("Natura","Dark Tree", 1, 1)); //fusewood
-//
-//		sLogCache.put(GT_ModHandler.getModItem("Natura","Rare Sapling", 1, 0), GT_ModHandler.getModItem("Natura","Rare Tree", 1, 0)); //maple
-//		sLogCache.put(GT_ModHandler.getModItem("Natura","Rare Sapling", 1, 1), GT_ModHandler.getModItem("Natura","Rare Tree", 1, 1)); //silverbell
-//		sLogCache.put(GT_ModHandler.getModItem("Natura","Rare Sapling", 1, 2), GT_ModHandler.getModItem("Natura","Rare Tree", 1, 2)); //amaranth
-//		sLogCache.put(GT_ModHandler.getModItem("Natura","Rare Sapling", 1, 3), GT_ModHandler.getModItem("Natura","Rare Tree", 1, 3)); //tigerwood
-//		sLogCache.put(GT_ModHandler.getModItem("Natura","Rare Sapling", 1, 4), GT_ModHandler.getModItem("Natura","willow", 1, 0)); //willow
-//
-//		//TConstruct
-//		sLogCache.put(GT_ModHandler.getModItem("TConstruct","slime.sapling", 1), GT_ModHandler.getModItem("TConstruct","slime.gel", 1)); //green slime blocks
-//
-//		//TaintedMagic
-//		sLogCache.put(GT_ModHandler.getModItem("TaintedMagic","BlockWarpwoodSapling", 1), GT_ModHandler.getModItem("TaintedMagic","BlockWarpwoodLog", 1)); //warpwood
-//
-//		//Thaumcraft
-//		sLogCache.put(GT_ModHandler.getModItem("Thaumcraft","blockCustomPlant", 1, 0), GT_ModHandler.getModItem("Thaumcraft","blockMagicalLog", 1, 0)); //greatwood
-//		sLogCache.put(GT_ModHandler.getModItem("Thaumcraft","blockCustomPlant", 1, 1), GT_ModHandler.getModItem("Thaumcraft","blockMagicalLog", 1, 1)); //silverwood
-//
-//		//gt++
-//		sLogCache.put(GT_ModHandler.getModItem("miscutils","blockRainforestOakSapling", 1), GT_ModHandler.getModItem("miscutils","blockRainforestOakLog", 1)); //gt++ rainforest
-//		sLogCache.put(GT_ModHandler.getModItem("miscutils","blockPineSapling", 1), GT_ModHandler.getModItem("miscutils","blockPineLogLog", 1)); //gt++ pine
+	public ItemStack mapWoodFromSapling(ItemStack aStack){
+		String registryName = Item.itemRegistry.getNameForObject(aStack.getItem());
+		switch(registryName){
+			case "minecraft:sapling":
+				switch(aStack.getItemDamage()) {
+					case 0:
+						return new ItemStack(Blocks.log,1, 0); //oak
+					case 1:
+						return new ItemStack(Blocks.log,1, 1); //spruce
+					case 2:
+						return new ItemStack(Blocks.log,1, 2); //birch
+					case 3:
+						return new ItemStack(Blocks.log,1, 3); //jungle
+					case 4:
+						return new ItemStack(Blocks.log2,1, 0); //acacia
+					case 5:
+						return new ItemStack(Blocks.log2,1, 1); //dark oak
+					default:
+						return null;
+				}
+			case "GalaxySpace:barnardaCsapling":
+				return GT_ModHandler.getModItem("GalaxySpace","barnardaClog", 1);
+			case "IC2:blockRubSapling":
+				return GT_ModHandler.getModItem("IC2","blockRubWood", 1);
+			case "Natura:florasapling":
+				switch(aStack.getItemDamage()){
+					case 1:
+						return GT_ModHandler.getModItem("Natura","tree", 1, 0); //eucalyptus
+					case 2:
+						return GT_ModHandler.getModItem("Natura","tree", 1, 3); //hopseed
+					case 3:
+						return GT_ModHandler.getModItem("Natura","tree", 1, 1); //sakura
+					case 4:
+						return GT_ModHandler.getModItem("Natura","tree", 1, 2); //ghostwood
+					case 5:
+						return GT_ModHandler.getModItem("Natura","bloodwood", 1, 0); //bloodwood
+					case 6:
+						return GT_ModHandler.getModItem("Natura","Dark Tree", 1, 0); //darkwood
+					case 7:
+						return GT_ModHandler.getModItem("Natura","Dark Tree", 1, 1); //fusewood
+					default:
+						return null;
+				}
+			case "Natura:Rare Sapling":
+				switch(aStack.getItemDamage()){
+					case 0:
+						return GT_ModHandler.getModItem("Natura","Rare Tree", 1, 0); //maple
+					case 1:
+						return GT_ModHandler.getModItem("Natura","Rare Tree", 1, 1); //silverbell
+					case 2:
+						return GT_ModHandler.getModItem("Natura","Rare Tree", 1, 2); //amaranth
+					case 3:
+						return GT_ModHandler.getModItem("Natura","Rare Tree", 1, 3); //tigerwood
+					case 4:
+						return GT_ModHandler.getModItem("Natura","willow", 1, 0);	//willow
+					default:
+						return null;
+				}
+			case "TConstruct:slime.sapling":
+				return GT_ModHandler.getModItem("TConstruct","slime.gel", 1, 1); //green slime blocks
+			case "TaintedMagic:BlockWarpwoodSapling":
+				return  GT_ModHandler.getModItem("TaintedMagic","BlockWarpwoodLog", 1); //warpwood
+			case "Thaumcraft:blockCustomPlant":
+				switch(aStack.getItemDamage()){
+					case 0:
+						return GT_ModHandler.getModItem("Thaumcraft","blockMagicalLog", 0); //greatwood
+					case 1:
+						return GT_ModHandler.getModItem("Thaumcraft","blockMagicalLog", 1); //silverwood
+					default:
+						return null;
+				}
+			case "miscutils:blockRainforestOakSapling":
+				return GT_ModHandler.getModItem("miscutils","blockRainforestOakLog", 1); //gt++ rainforest
+			case "miscutils:blockPineSapling":
+				return GT_ModHandler.getModItem("miscutils","blockPineLogLog", 1); //gt++ pine
+			default:
+				return null;
+		}
 	}
 
 	public boolean tryDamageTool(ItemStack invItem) {
@@ -412,7 +440,6 @@ public class GregtechMetaTileEntityTreeFarm extends GregtechMeta_MultiBlockBase<
 
 	@Override
 	public void construct(ItemStack stackSize, boolean hintsOnly) {
-
 		buildPiece(mName , stackSize, hintsOnly, 1, 1, 0);
 	}
 }
