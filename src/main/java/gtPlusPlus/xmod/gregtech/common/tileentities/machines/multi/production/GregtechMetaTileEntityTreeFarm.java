@@ -300,8 +300,6 @@ public class GregtechMetaTileEntityTreeFarm extends GregtechMeta_MultiBlockBase<
 		return false;
 	}
 
-<<<<<<< Updated upstream
-=======
 	public void getWoodFromSapling() {
 		if(sLogCache.size() == 0)
 			loadMapWoodFromSapling();
@@ -387,7 +385,6 @@ public class GregtechMetaTileEntityTreeFarm extends GregtechMeta_MultiBlockBase<
 		sLogCache.put(GT_ModHandler.getModItem("miscutils","blockPineSapling", 1), GT_ModHandler.getModItem("miscutils","blockPineLogLog", 1)); //gt++ pine
 	}
 
->>>>>>> Stashed changes
 	public boolean tryDamageTool(ItemStack invItem) {
 		if (invItem != null && invItem.getItem() instanceof GT_MetaGenerated_Tool) {
 			long aDmg = GT_MetaGenerated_Tool.getToolDamage(invItem);
